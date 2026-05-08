@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user system settings and status",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "isPremium": { "type": "boolean" },
+        "isAdmin": { "type": "boolean" },
+        "isRootActive": { "type": "boolean" },
+        "isGpsActive": { "type": "boolean" },
+        "virtualLocation": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "name": { "type": "string" }
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Clone": {
+      "title": "Cloned App",
+      "description": "Represents an app instance within the virtual container",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "packageName": { "type": "string" },
+        "icon": { "type": "string" },
+        "version": { "type": "string" },
+        "size": { "type": "string" },
+        "isClone": { "type": "boolean" },
+        "status": { "type": "string" },
+        "lastUsed": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "packageName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Global user settings and profile data"
+    },
+    "/users/{userId}/clones/{cloneId}": {
+      "schema": "Clone",
+      "description": "Apps cloned or installed by the user"
+    }
+  }
+}

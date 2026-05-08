@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // HELPER FUNCTIONS
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/system_admins/$(request.auth.uid)); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // USER VALIDATION
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) 
+        && data.uid == request.auth.uid
+        && data.email is string
+        && (data.get('isPremium', false) is bool)
+        && (data.get('isAdmin', false) is bool)
+        && (data.get('isRootActive', false) is bool)
+        && (data.get('isGpsActive', false) is bool)
+        && (data.get('virtualLocation', null) == null || data.virtualLocation is map);
+    }
+
+    // CLONE VALIDATION
+    function isValidClone(data) {
+      return data.keys().hasAll(['id', 'name', 'packageName'])
+        && data.id is string
+        && data.name is string && data.name.size() <= 100
+        && data.packageName is string && data.packageName.size() <= 200
+        && (data.get('isClone', true) is bool)
+        && (data.get('status', 'active') is string);
+    }
+
+    // COLLECTIONS
+    
+    // Admin collection - only readable by signed in users, writable by no one (manually managed)
+    match /system_admins/{adminId} {
+      allow read: if isSignedIn();
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      allow create: if isOwner(userId) 
+        && isVerified()
+        && isValidUser(incoming())
+        && incoming().isAdmin == false; // Users can't make themselves admins
+        
+      allow update: if (isOwner(userId) || isAdmin())
+        && isValidUser(incoming())
+        && (
+          isAdmin() || (
+            // Regular users cannot change their own admin or premium status
+            incoming().diff(existing()).affectedKeys().hasOnly(['isRootActive', 'isGpsActive', 'virtualLocation', 'updatedAt', 'email'])
+            && incoming().isAdmin == existing().isAdmin
+            && incoming().isPremium == existing().isPremium
+          )
+        );
+        
+      allow delete: if isAdmin();
+
+      // Subcollection: Clones
+      match /clones/{cloneId} {
+        allow get: if isOwner(userId) || isAdmin();
+        allow list: if isOwner(userId) || isAdmin();
+        
+        allow create: if isOwner(userId) 
+          && isValidClone(incoming())
+          && isValidId(cloneId);
+          
+        allow update: if (isOwner(userId) || isAdmin())
+          && isValidClone(incoming())
+          && (
+             isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lastUsed', 'name', 'icon'])
+          );
+          
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+  }
+}

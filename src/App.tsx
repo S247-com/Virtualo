@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, useRef } from 'react';
 import { 
   Home, 
   PlusCircle, 
@@ -36,6 +36,68 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// --- Firebase ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, orderBy, addDoc, deleteDoc, serverTimestamp, getDocFromServer } from 'firebase/firestore';
+import firebaseConfig from '../firebase-applet-config.json';
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if(error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration.");
+    }
+  }
+}
+testConnection();
 
 // --- Types ---
 interface AppInstance {
@@ -243,6 +305,30 @@ const translations: any = {
   }
 };
 
+
+// Helper for React Leaflet to handle map move events
+function MapController({ onMove }: { onMove: (lat: number, lng: number) => void }) {
+  const map = useMapEvents({
+    moveend: () => {
+      const center = map.getCenter();
+      onMove(center.lat, center.lng);
+    },
+    click: (e) => {
+      map.flyTo(e.latlng, map.getZoom());
+    }
+  });
+  return null;
+}
+
+// Sync map center when virtualLocation changes from search or initialization
+function MapCenterSync({ location }: { location: { lat: number, lng: number } }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([location.lat, location.lng], map.getZoom(), { animate: true });
+  }, [location.lat, location.lng, map]);
+  return null;
+}
+
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [activeTab, setActiveTab] = useState<'home' | 'add' | 'settings' | 'premium' | 'admin'>('home');
@@ -252,52 +338,128 @@ export default function App() {
   const [selectedApp, setSelectedApp] = useState<AppInstance | null>(null);
   const [cloningProgress, setCloningProgress] = useState(0);
 
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [userData, setUserData] = useState<{ isPremium: boolean, isAdmin: boolean, isRootActive: boolean, isGpsActive: boolean, virtualLocation: any } | null>(null);
+  const [clonedApps, setClonedApps] = useState<AppInstance[]>([]);
+
   // Theme persistence: Default to Day (false)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('virtualo_theme');
     return saved ? JSON.parse(saved) : false; 
   });
 
-  const [isRootActive, setIsRootActive] = useState(() => {
-    return localStorage.getItem('virtualo_root_active') === 'true';
-  });
-
-  const [isGpsActive, setIsGpsActive] = useState(() => {
-    return localStorage.getItem('virtualo_gps_active') === 'true';
-  });
-
+  // Handle Auth Changes
   useEffect(() => {
-    localStorage.setItem('virtualo_root_active', String(isRootActive));
-  }, [isRootActive]);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        // Sync user profile settings
+        const userDocRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userDocRef);
+        
+        if (!userSnap.exists()) {
+          // Create initial user profile
+          const initialData = {
+            uid: user.uid,
+            email: user.email,
+            isPremium: false,
+            isAdmin: false,
+            isRootActive: false,
+            isGpsActive: false,
+            virtualLocation: { lat: 41.2995, lng: 69.2401, name: "Tashkent, Uzbekistan" },
+            updatedAt: serverTimestamp()
+          };
+          await setDoc(userDocRef, initialData).catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`));
+          setUserData(initialData as any);
+        } else {
+          setUserData(userSnap.data() as any);
+        }
 
-  useEffect(() => {
-    localStorage.setItem('virtualo_gps_active', String(isGpsActive));
-  }, [isGpsActive]);
+        // Real-time listener for user data
+        onSnapshot(userDocRef, (snap) => {
+          if (snap.exists()) setUserData(snap.data() as any);
+        }, (e) => handleFirestoreError(e, OperationType.GET, `users/${user.uid}`));
 
-  const deleteClone = (id: string) => {
-    if (confirm(t.delete_confirm)) {
-      setClonedApps(prev => prev.filter(app => app.id !== id));
+        // Real-time listener for clones
+        const clonesRef = collection(db, 'users', user.uid, 'clones');
+        const clonesQuery = query(clonesRef, orderBy('createdAt', 'desc'));
+        onSnapshot(clonesQuery, (snap) => {
+          const clones = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppInstance));
+          setClonedApps(clones);
+        }, (e) => handleFirestoreError(e, OperationType.LIST, `users/${user.uid}/clones`));
+
+      } else {
+        setUserData(null);
+        setClonedApps([]);
+      }
+      setIsInitializing(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const loginWithGoogle = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+      setToast({ show: true, message: "Welcome to Virtualo!", type: 'success' });
+      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+    } catch (error) {
+      console.error("Login failed", error);
     }
   };
 
-  const factoryReset = () => {
-    if (confirm(t.reset_confirm)) {
-      setClonedApps([]);
-      setIsRootActive(false);
-      setIsGpsActive(false);
-      setVirtualLocation(null);
-      setPremiumUsers(["sanjarbekorinboyev7@gmail.com"]);
-      setAdmins(["sanjarbekorinboyev7@gmail.com"]);
-      setSupportLink("https://t.me/virtualo_support");
+  const handleLogout = async () => {
+    await signOut(auth);
+    setToast({ show: true, message: "Logged out successfully", type: 'info' });
+    setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+  };
 
-      localStorage.removeItem('virtualo_clones');
-      localStorage.removeItem('virtualo_root_active');
-      localStorage.removeItem('virtualo_gps_active');
-      localStorage.removeItem('virtualo_location');
-      localStorage.removeItem('virtualo_premium');
-      localStorage.removeItem('virtualo_admins');
-      localStorage.removeItem('virtualo_support');
-      alert("System Wiped Successfully.");
+  // State derived from userData
+  const isRootActive = userData?.isRootActive || false;
+  const isGpsActive = userData?.isGpsActive || false;
+  const virtualLocation = userData?.virtualLocation || { lat: 41.2995, lng: 69.2401, name: "Tashkent, Uzbekistan" };
+  const isAdmin = userData?.isAdmin || false;
+  const isPremium = userData?.isPremium || userData?.isAdmin || false;
+
+  const setIsRootActive = async (val: boolean) => {
+    if (!currentUser) return;
+    await updateDoc(doc(db, 'users', currentUser.uid), { isRootActive: val, updatedAt: serverTimestamp() })
+      .catch(e => handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`));
+  };
+
+  const setIsGpsActive = async (val: boolean) => {
+    if (!currentUser) return;
+    await updateDoc(doc(db, 'users', currentUser.uid), { isGpsActive: val, updatedAt: serverTimestamp() })
+      .catch(e => handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`));
+  };
+
+  const setVirtualLocation = async (loc: any) => {
+    if (!currentUser) return;
+    await updateDoc(doc(db, 'users', currentUser.uid), { virtualLocation: loc, updatedAt: serverTimestamp() })
+      .catch(e => handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`));
+  };
+
+  const deleteClone = async (id: string) => {
+    if (!currentUser) return;
+    if (confirm(t.delete_confirm)) {
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'clones', id))
+        .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${currentUser.uid}/clones/${id}`));
+      setToast({ show: true, message: "Clone Deleted Successfully", type: 'success' });
+      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+    }
+  };
+
+  const factoryReset = async () => {
+    if (!currentUser) return;
+    if (confirm(t.reset_confirm)) {
+      // For simplicity, we just clear status and location; real mass delete would need a batch
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        isRootActive: false,
+        isGpsActive: false,
+        virtualLocation: { lat: 41.2995, lng: 69.2401, name: "Tashkent, Uzbekistan" },
+        updatedAt: serverTimestamp()
+      });
+      alert("System Settings Reset. Note: Clones must be deleted manually in this version.");
     }
   };
 
@@ -312,72 +474,91 @@ export default function App() {
     localStorage.setItem('virtualo_lang', language);
   }, [language]);
 
-  const [admins, setAdmins] = useState<string[]>(() => {
-    const saved = localStorage.getItem('virtualo_admins');
-    return saved ? JSON.parse(saved) : ["sanjarbekorinboyev7@gmail.com"];
-  });
-  const [premiumUsers, setPremiumUsers] = useState<string[]>(() => {
-    const saved = localStorage.getItem('virtualo_premium');
-    return saved ? JSON.parse(saved) : ["sanjarbekorinboyev7@gmail.com"];
-  });
   const [supportLink, setSupportLink] = useState(() => {
     return localStorage.getItem('virtualo_support') || "https://t.me/virtualo_support";
   });
 
-  const [virtualLocation, setVirtualLocation] = useState(() => {
-    const saved = localStorage.getItem('virtualo_gps');
-    return saved ? JSON.parse(saved) : { lat: 41.2995, lng: 69.2401, name: "Tashkent, Uzbekistan" };
-  });
+  const [mockFiles] = useState([
+    { name: 'WhatsApp_v2.24.apk', size: '45.2 MB', type: 'apk', icon: '🟢' },
+    { name: 'Telegram_v10.1.apk', size: '72.1 MB', type: 'apk', icon: '🔵' },
+    { name: 'PUBG_Mobile_v3.0.apk', size: '1.2 GB', type: 'apk', icon: '🔫' },
+    { name: 'config_root.xml', size: '12 KB', type: 'file' },
+    { name: 'obb_data_main.zip', size: '450 MB', type: 'file' }
+  ]);
 
-  const [user, setUser] = useState<UserProfile>({
-    name: "Sanjarbek Orinboyev",
-    email: "sanjarbekorinboyev7@gmail.com",
-    avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sanjar",
-    isLoggedIn: true
-  });
+  const handleInstallAPK = async (file: any) => {
+    if (file.type !== 'apk' || !currentUser) return;
+    
+    setSelectedApp({
+      id: `apk-${Date.now()}`,
+      name: file.name.split('_')[0],
+      packageName: `com.virtualo.pkg.${file.name.split('_')[0].toLowerCase()}`,
+      icon: file.icon || '📦',
+      version: file.name.split('_v')[1]?.replace('.apk', '') || '1.0',
+      size: file.size,
+      isClone: false,
+      status: 'active'
+    });
+    setIsCloning(true);
+    setCloningProgress(0);
+    
+    const duration = 3500;
+    const interval = 50;
+    const steps = duration / interval;
+    let step = 0;
+    
+    const timer = setInterval(async () => {
+      step++;
+      setCloningProgress((step / steps) * 100);
+      if (step >= steps) {
+        clearInterval(timer);
+        
+        const newAppId = `app-${Date.now()}`;
+        const newApp = {
+          id: newAppId,
+          name: file.name.split('_')[0],
+          packageName: `com.virtualo.pkg.${file.name.split('_')[0].toLowerCase()}`,
+          icon: file.icon || '📦',
+          version: '1.0',
+          size: file.size,
+          isClone: false,
+          status: 'active',
+          lastUsed: 'Just installed',
+          createdAt: serverTimestamp()
+        };
 
-  const [clonedApps, setClonedApps] = useState<AppInstance[]>(() => {
-    const saved = localStorage.getItem('virtualo_clones');
-    return saved ? JSON.parse(saved) : MOCK_CLONES;
-  });
+        // Persist to Firestore
+        await setDoc(doc(db, 'users', currentUser.uid, 'clones', newAppId), newApp)
+          .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${currentUser.uid}/clones/${newAppId}`));
+
+        setTimeout(() => {
+          setIsCloning(false);
+          setSelectedApp(null);
+          setToast({ show: true, message: `${newApp.name} Installed Successfully`, type: 'success' });
+          setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+          setActiveTab('home');
+        }, 500);
+      }
+    }, interval);
+  };
 
   useEffect(() => {
     localStorage.setItem('virtualo_clones', JSON.stringify(clonedApps));
   }, [clonedApps]);
 
   const [showMapView, setShowMapView] = useState(false);
+  const [toast, setToast] = useState<{show: boolean, message: string, type: 'success' | 'error' | 'info'}>({ show: false, message: '', type: 'info' });
   const [mapScale, setMapScale] = useState(1);
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
   const [touchStartDist, setTouchStartDist] = useState<number | null>(null);
-
-  const isAdmin = user.isLoggedIn && admins.includes(user.email);
-  const isPremium = user.isLoggedIn && (premiumUsers.includes(user.email) || admins.includes(user.email));
 
   useEffect(() => {
     localStorage.setItem('virtualo_theme', JSON.stringify(isDarkMode));
   }, [isDarkMode]);
 
   useEffect(() => {
-    localStorage.setItem('virtualo_admins', JSON.stringify(admins));
-  }, [admins]);
-
-  useEffect(() => {
-    localStorage.setItem('virtualo_premium', JSON.stringify(premiumUsers));
-  }, [premiumUsers]);
-
-  useEffect(() => {
     localStorage.setItem('virtualo_support', supportLink);
   }, [supportLink]);
-
-  useEffect(() => {
-    localStorage.setItem('virtualo_gps', JSON.stringify(virtualLocation));
-  }, [virtualLocation]);
-
-  useEffect(() => {
-    // Initializing simulation
-    const timeout = setTimeout(() => setIsInitializing(false), 2000);
-    return () => clearTimeout(timeout);
-  }, []);
 
   if (isInitializing) {
     return (
@@ -412,6 +593,7 @@ export default function App() {
   }
 
   const handleClone = (app: AppInstance) => {
+    if (!currentUser) return;
     setSelectedApp(app);
     setIsCloning(true);
     setCloningProgress(0);
@@ -421,22 +603,29 @@ export default function App() {
     const steps = duration / interval;
     let step = 0;
     
-    const timer = setInterval(() => {
+    const timer = setInterval(async () => {
       step++;
       setCloningProgress((step / steps) * 100);
       if (step >= steps) {
         clearInterval(timer);
         
-        // Add to cloned apps
-        const newClone: AppInstance = {
-          ...app,
-          id: `clone-${Date.now()}`,
+        const cloneId = `clone-${Date.now()}`;
+        const newClone = {
+          id: cloneId,
           name: `${app.name} Clone`,
+          packageName: `${app.packageName}.clone.${Date.now()}`,
+          icon: app.icon,
+          version: app.version,
+          size: app.size,
           isClone: true,
           status: 'active',
-          lastUsed: 'Just now'
+          lastUsed: 'Just now',
+          createdAt: serverTimestamp()
         };
-        setClonedApps(prev => [newClone, ...prev]);
+
+        // Persist to Firestore
+        await setDoc(doc(db, 'users', currentUser.uid, 'clones', cloneId), newClone)
+          .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${currentUser.uid}/clones/${cloneId}`));
 
         setTimeout(() => {
           setIsCloning(false);
@@ -480,6 +669,25 @@ export default function App() {
                 <div>
                   <h2 className={`text-2xl font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.home}</h2>
                   <p className="text-sm opacity-60">Manage your active virtual clones.</p>
+                </div>
+              </div>
+
+              {/* Status Integrated Dashboard */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className={`p-3 rounded-2xl border text-center space-y-1 ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
+                  <ShieldCheck size={16} className={`mx-auto ${isRootActive ? 'text-brand' : 'opacity-20'}`} />
+                  <p className="text-[8px] font-bold opacity-50">ROOT</p>
+                  <p className={`text-[10px] font-bold ${isRootActive ? 'text-brand' : 'text-red-500'}`}>{isRootActive ? 'ACTIVE' : 'OFF'}</p>
+                </div>
+                <div className={`p-3 rounded-2xl border text-center space-y-1 ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
+                  <MapPin size={16} className={`mx-auto ${isGpsActive ? 'text-brand' : 'opacity-20'}`} />
+                  <p className="text-[8px] font-bold opacity-50">GPS</p>
+                  <p className={`text-[10px] font-bold ${isGpsActive ? 'text-brand' : 'text-red-500'}`}>{isGpsActive ? 'SPOOF' : 'OFF'}</p>
+                </div>
+                <div className={`p-3 rounded-2xl border text-center space-y-1 ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
+                  <Zap size={16} className={`mx-auto ${isPremium ? 'text-amber-500' : 'opacity-20'}`} />
+                  <p className="text-[8px] font-bold opacity-50">RANK</p>
+                  <p className={`text-[10px] font-bold ${isPremium ? 'text-amber-500' : 'text-gray-400'}`}>{isAdmin ? 'ADMIN' : (isPremium ? 'PREMIUM' : 'FREE')}</p>
                 </div>
               </div>
 
@@ -601,25 +809,40 @@ export default function App() {
                             <p className="text-[10px] font-mono opacity-50">{app.version} • {app.size}</p>
                           </div>
                         </div>
-                        <PlusCircle size={20} className="text-brand opacity-60" />
+                        <Copy size={20} className="text-brand opacity-60" />
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className={`border-2 border-dashed rounded-3xl p-12 text-center space-y-4 ${isDarkMode ? 'bg-surface-800/50 border-border' : 'bg-gray-50 border-gray-300'}`}>
-                      <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center ${isDarkMode ? 'bg-surface-700' : 'bg-white'}`}>
-                        <FolderOpen className="text-brand" size={24} />
+                    <div className={`border-2 border-dashed rounded-3xl p-8 text-center space-y-4 ${isDarkMode ? 'bg-surface-800/50 border-border' : 'bg-gray-50 border-gray-300'}`}>
+                      <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center ${isDarkMode ? 'bg-surface-700' : 'bg-white'}`}>
+                        <FolderOpen className="text-brand" size={20} />
                       </div>
                       <div>
-                        <p className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Select APK File</p>
-                        <p className="text-xs opacity-50 mt-1">Files will be cloned into the virtual container.</p>
+                        <p className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Storage Explorer</p>
+                        <p className="text-[10px] opacity-50 mt-1">Tap APK files to install into Virtualo.</p>
                       </div>
-                      <button className="bg-brand text-black font-bold px-6 py-2 rounded-xl active:scale-95 transition-transform">BROWSE STORAGE</button>
                     </div>
-                    <div className="grid grid-cols-1 gap-2">
-                       <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest text-center">Recent Selections</p>
-                       <div className="text-center text-xs opacity-30 py-4 italic">No recent APK files found.</div>
+                    <div className={`border rounded-2xl overflow-hidden divide-y ${isDarkMode ? 'bg-surface-800 border-border divide-border' : 'bg-white border-gray-200 divide-gray-100'}`}>
+                       {mockFiles.map((file, i) => (
+                         <div 
+                           key={i} 
+                           onClick={() => file.type === 'apk' && handleInstallAPK(file)}
+                           className={`flex items-center justify-between p-4 ${file.type === 'apk' ? 'cursor-pointer hover:bg-brand/5' : 'opacity-50'}`}
+                         >
+                           <div className="flex items-center gap-3">
+                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDarkMode ? 'bg-surface-700' : 'bg-gray-100'}`}>
+                               {file.type === 'apk' ? <Zap size={14} className="text-brand" /> : <Database size={14} />}
+                             </div>
+                             <div>
+                               <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{file.name}</p>
+                               <p className="text-[9px] opacity-50">{file.size}</p>
+                             </div>
+                           </div>
+                           {file.type === 'apk' && <PlusCircle size={16} className="text-brand" />}
+                         </div>
+                       ))}
                     </div>
                   </div>
                 )}
@@ -637,19 +860,22 @@ export default function App() {
             >
               {/* Profile Card */}
               <div className={`p-6 rounded-3xl border text-center space-y-4 relative overflow-hidden ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-md'}`}>
-                 {user.isLoggedIn ? (
+                 {currentUser ? (
                    <>
                     <div className="relative inline-block">
-                      <img src={user.avatar} alt="Avatar" className="w-20 h-20 rounded-2xl mx-auto border-2 border-brand/20 p-1" />
+                      <img src={currentUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.displayName}`} alt="Avatar" className="w-20 h-20 rounded-2xl mx-auto border-2 border-brand/20 p-1" />
                       <div className="absolute -bottom-1 -right-1 bg-brand text-black rounded-full p-1 border-2 border-surface-800">
                         <CheckCircle2 size={12} />
                       </div>
                     </div>
                     <div>
-                      <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{user.name}</h3>
-                      <p className="text-xs opacity-50 font-mono tracking-tight">{user.email}</p>
+                      <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{currentUser.displayName}</h3>
+                      <p className="text-xs opacity-50 font-mono tracking-tight">{currentUser.email}</p>
                     </div>
-                    <button className="flex items-center gap-2 mx-auto text-[11px] font-bold py-1.5 px-4 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
+                    <button 
+                      onClick={handleLogout}
+                      className="flex items-center gap-2 mx-auto text-[11px] font-bold py-1.5 px-4 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
+                    >
                       <LogOut size={14} /> SIGN OUT
                     </button>
                    </>
@@ -659,7 +885,12 @@ export default function App() {
                         <User className="opacity-30" size={24} />
                       </div>
                       <h3 className="font-bold">Not Logged In</h3>
-                      <button className="w-full bg-brand text-black font-bold py-2.5 rounded-xl">LOGIN WITH GOOGLE</button>
+                      <button 
+                        onClick={loginWithGoogle}
+                        className="w-full bg-brand text-black font-bold py-2.5 rounded-xl shadow-lg shadow-brand/20 active:scale-95 transition-all"
+                      >
+                        LOGIN WITH GOOGLE
+                      </button>
                    </div>
                  )}
               </div>
@@ -678,10 +909,8 @@ export default function App() {
                        </div>
                        <div className="text-left">
                          <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.premium_functions}</p>
-                         <p className="text-[10px] opacity-50">GPS, Root & Virtual storage</p>
                        </div>
                      </div>
-                     <ArrowRight size={16} className="opacity-30" />
                    </button>
 
                    {isAdmin && (
@@ -695,12 +924,32 @@ export default function App() {
                         </div>
                         <div className="text-left">
                           <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{t.admin_panel}</p>
-                          <p className="text-[10px] opacity-50 uppercase">Security & User Ops</p>
                         </div>
                       </div>
-                      <ArrowRight size={16} className="text-brand opacity-60" />
                     </button>
                    )}
+                </div>
+              </div>
+
+              {/* System Features (Free) */}
+              <div className="space-y-3">
+                <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest pl-2">System Features</p>
+                <div className={`p-5 rounded-3xl border ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
+                   <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                         <Database size={16} className="text-brand" />
+                         <span className="text-sm font-bold">{t.storage_isolation}</span>
+                      </div>
+                      <div className="text-[9px] bg-brand/20 text-brand px-2 py-0.5 rounded-full font-bold">READY</div>
+                   </div>
+                   <div className="space-y-3">
+                      {['Android/obb', 'Android/data'].map((p, i) => (
+                         <div key={i} className={`p-3 rounded-2xl border text-[10px] font-mono ${isDarkMode ? 'bg-black/20 border-white/5 text-gray-400' : 'bg-gray-50/80 border-gray-200 text-gray-600'}`}>
+                            <p className="opacity-60 mb-1 font-bold">{p === 'Android/obb' ? 'Apps Data Expansion' : 'System Virtual Storage'}:</p>
+                            <p className="text-brand break-all font-medium">/storage/emulated/0/{p} <br/>→ /.virtualo/{p}</p>
+                         </div>
+                      ))}
+                   </div>
                 </div>
               </div>
 
@@ -872,28 +1121,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Storage Isolation - Visible to All */}
-              <div className="space-y-3">
-                <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest pl-2">System Isolation</p>
-                <div className={`p-5 rounded-3xl border ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
-                   <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                         <Database size={16} className="text-brand" />
-                         <span className="text-sm font-bold">{t.storage_isolation}</span>
-                      </div>
-                      <div className="text-[9px] bg-brand/20 text-brand px-2 py-0.5 rounded-full font-bold">READY</div>
-                   </div>
-                   <div className="space-y-3">
-                      {['Android/obb', 'Android/data'].map((p, i) => (
-                         <div key={i} className={`p-3 rounded-2xl border text-[10px] font-mono ${isDarkMode ? 'bg-black/20 border-white/5 text-gray-400' : 'bg-gray-50'}`}>
-                            <p className="opacity-40 mb-1">MAPPED_PATH:</p>
-                            <p className="text-brand break-all">/storage/emulated/0/{p} <br/>→ /.virtualo/{p}</p>
-                         </div>
-                      ))}
-                   </div>
-                </div>
-              </div>
-
               {!isPremium && (
                 <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-8 text-center bg-transparent backdrop-blur-[2px]">
                    <div className="bg-surface-900/90 border border-brand/20 p-8 rounded-[2.5rem] shadow-2xl backdrop-blur-xl space-y-4 max-w-[280px]">
@@ -951,111 +1178,17 @@ export default function App() {
 
               {/* User Management Lists */}
               <div className="space-y-6">
-                {/* Premium Users */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between pl-2">
-                    <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest">{t.manage_premium}</p>
-                    <span className="text-[9px] bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full font-bold">{premiumUsers.length}</span>
-                  </div>
-                  
-                  <div className={`p-4 rounded-3xl border space-y-3 ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
-                    <div className="flex gap-2 mb-2">
-                       <input 
-                         id="add-prem"
-                         type="email" 
-                         placeholder="user@gmail.com"
-                         className={`flex-1 text-xs px-4 py-2.5 rounded-xl border focus:outline-none ${isDarkMode ? 'bg-surface-900 border-border' : 'bg-gray-50 border-gray-200'}`}
-                       />
-                       <button 
-                         onClick={() => {
-                           const el = document.getElementById('add-prem') as HTMLInputElement;
-                           if (el.value && !premiumUsers.includes(el.value)) {
-                             setPremiumUsers([...premiumUsers, el.value]);
-                             el.value = '';
-                           }
-                         }}
-                         className="bg-brand text-black font-bold px-4 rounded-xl text-[10px]"
-                       >
-                         GRANT
-                       </button>
-                    </div>
-
-                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                      {premiumUsers.length === 0 ? (
-                        <p className="text-[10px] opacity-30 text-center py-4 italic">{t.no_users}</p>
-                      ) : premiumUsers.map((email) => (
-                        <div key={email} className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-surface-900/50' : 'bg-gray-50'}`}>
-                           <div className="flex items-center gap-2 overflow-hidden">
-                              <div className="w-2 h-2 rounded-full bg-brand shadow-[0_0_5px_brand]" />
-                              <span className="text-xs font-mono truncate">{email}</span>
-                           </div>
-                           <button 
-                             onClick={() => {
-                               if (confirm(t.delete_confirm)) {
-                                 setPremiumUsers(premiumUsers.filter(u => u !== email));
-                               }
-                             }}
-                             className="p-1.5 text-red-500/40 hover:text-red-500 transition-colors"
-                           >
-                             <Trash2 size={16} />
-                           </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Admins */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between pl-2">
-                    <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest">{t.manage_admins}</p>
-                    <span className="text-[9px] bg-brand/10 text-brand px-2 py-0.5 rounded-full font-bold">{admins.length}</span>
-                  </div>
-                  
-                  <div className={`p-4 rounded-3xl border space-y-3 ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
-                    {/* ... admin input ... */}
-                    <div className="flex gap-2 mb-2">
-                       <input 
-                         id="add-admin"
-                         type="email" 
-                         placeholder="admin@gmail.com"
-                         className={`flex-1 text-xs px-4 py-2.5 rounded-xl border focus:outline-none ${isDarkMode ? 'bg-surface-900 border-border' : 'bg-gray-50 border-gray-200'}`}
-                       />
-                       <button 
-                         onClick={() => {
-                           const el = document.getElementById('add-admin') as HTMLInputElement;
-                           if (el.value && !admins.includes(el.value)) {
-                             setAdmins([...admins, el.value]);
-                             el.value = '';
-                           }
-                         }}
-                         className="bg-brand text-black font-bold px-4 rounded-xl text-[10px]"
-                       >
-                         ADD
-                       </button>
-                    </div>
-
-                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                      {admins.map((email) => (
-                        <div key={email} className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-surface-900/50' : 'bg-gray-50'}`}>
-                           <div className="flex items-center gap-2 overflow-hidden">
-                              <ShieldCheck size={12} className="text-brand shrink-0" />
-                              <span className="text-xs font-mono truncate">{email}</span>
-                           </div>
-                           <button 
-                             onClick={() => {
-                               if (email === user.email) {
-                                 alert("Self-removal locked.");
-                               } else if (confirm(t.delete_confirm)) {
-                                 setAdmins(admins.filter(a => a !== email));
-                               }
-                             }}
-                             className="p-1.5 text-red-500/40 hover:text-red-500 transition-colors"
-                           >
-                             <Trash2 size={16} />
-                           </button>
-                        </div>
-                      ))}
+                <div className={`p-6 rounded-3xl border text-center space-y-3 ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
+                  <ShieldCheck size={24} className="mx-auto text-brand opacity-60" />
+                  <h3 className="font-bold text-sm">Centralized Management</h3>
+                  <p className="text-[11px] opacity-60 leading-relaxed">
+                    User privileges (Admin/Premium) are currently managed via the 
+                    <a href="https://console.firebase.google.com" target="_blank" className="text-brand hover:underline font-bold ml-1">Firebase Console</a>.
+                  </p>
+                  <div className="flex flex-col gap-2 pt-2">
+                    <div className="flex justify-between text-[10px] p-2 bg-black/5 rounded-xl">
+                      <span className="opacity-60">Your Status:</span>
+                      <span className="text-brand font-bold uppercase">{isAdmin ? 'Super Admin' : 'Member'}</span>
                     </div>
                   </div>
                 </div>
@@ -1212,96 +1345,55 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] overflow-hidden flex flex-col"
           >
-            {/* Immersive Map Background Layer (Interactive) */}
-            <div className={`absolute inset-0 z-0 overflow-hidden ${isDarkMode ? 'bg-[#0b0d0f]' : 'bg-[#f5f5f5]'}`}>
-              <motion.div 
-                id="map-container"
-                drag
-                dragMomentum={false}
-                dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
-                onDrag={(e, info) => {
-                  // Calculate mock coordinates based on velocity or simple offset
-                  // Every 100px is roughly 0.001 degrees
-                  const deltaLat = info.delta.y * 0.00001 * (1/mapScale);
-                  const deltaLng = info.delta.x * 0.00001 * (1/mapScale);
-                  
+            {/* Immersive Map Background Layer (Leaflet OSM) */}
+            <div className={`absolute inset-0 z-0 ${isDarkMode ? 'bg-[#0b0d0f]' : 'bg-[#abc9f1]'}`}>
+              <MapContainer 
+                center={[virtualLocation.lat, virtualLocation.lng]} 
+                zoom={13} 
+                minZoom={3}
+                maxZoom={18}
+                zoomControl={false}
+                attributionControl={false}
+                scrollWheelZoom={true}
+                dragging={true}
+                doubleClickZoom={true}
+                style={{ height: '100%', width: '100%', background: 'transparent' }}
+              >
+                <TileLayer
+                  noWrap={false}
+                  url={isDarkMode 
+                    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                    : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  }
+                />
+                <MapCenterSync location={virtualLocation} />
+                <MapController onMove={(lat, lng) => {
                   setVirtualLocation(prev => ({
                     ...prev,
-                    lat: prev.lat - deltaLat,
-                    lng: prev.lng + deltaLng,
-                    name: `Location Fix: ${prev.lat.toFixed(4)}, ${prev.lng.toFixed(4)}`
+                    lat,
+                    lng,
+                    name: `Fix: ${lat.toFixed(4)}, ${lng.toFixed(4)}`
                   }));
-                }}
-                onClick={(e) => {
-                   // Single click to teleport marker to exact spot
-                   const rect = e.currentTarget.getBoundingClientRect();
-                   const x = e.clientX - rect.left;
-                   const y = e.clientY - rect.top;
-                   const centerX = rect.width / 2;
-                   const centerY = rect.height / 2;
-                   
-                   const deltaLat = (centerY - y) * 0.0001 * (1/mapScale);
-                   const deltaLng = (x - centerX) * 0.0001 * (1/mapScale);
-                   
-                   setVirtualLocation(prev => ({
-                     ...prev,
-                     lat: prev.lat + deltaLat,
-                     lng: prev.lng + deltaLng,
-                     name: `Marker: ${prev.lat.toFixed(3)}, ${prev.lng.toFixed(3)}`
-                   }));
-                }}
-                className="absolute inset-0 w-[10000px] h-[10000px] -left-[5000px] -top-[5000px]"
-                style={{ scale: mapScale }}
-                onWheel={(e) => {
-                   if (e.deltaY < 0) setMapScale(prev => Math.min(prev + 0.2, 8));
-                   else setMapScale(prev => Math.max(prev - 0.2, 0.15));
-                }}
-                onTouchMove={(e) => {
-                  if (e.touches.length === 2) {
-                    const dist = Math.hypot(
-                      e.touches[0].pageX - e.touches[1].pageX,
-                      e.touches[0].pageY - e.touches[1].pageY
-                    );
-                    if (touchStartDist === null) {
-                      setTouchStartDist(dist);
-                    } else {
-                      const delta = dist / touchStartDist;
-                      setMapScale(prev => Math.min(Math.max(prev * delta, 0.15), 8));
-                      setTouchStartDist(dist);
-                    }
-                  }
-                }}
-                onTouchEnd={() => setTouchStartDist(null)}
-              >
-                {/* Map Geometry Simulation */}
-                <svg className="absolute inset-0 w-full h-full opacity-20 pointer-events-none">
-                  <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
-                    <path d="M 100 0 L 0 0 0 100" fill="none" stroke={isDarkMode ? "#ffffff" : "#000000"} strokeWidth="0.5"/>
-                  </pattern>
-                  <rect width="100%" height="100%" fill="url(#grid)" />
-                  
-                  {/* Optimized Mock Roads */}
-                  <g stroke={isDarkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)"} strokeWidth="20" fill="none">
-                     {Array.from({ length: 40 }).map((_, i) => (
-                       <Fragment key={i}>
-                         <line x1="0" y1={i * 250} x2="10000" y2={i * 250} />
-                         <line x1={i * 250} y1="0" x2={i * 250} y2="10000" />
-                       </Fragment>
-                     ))}
-                  </g>
-                </svg>
-              </motion.div>
+                }} />
+              </MapContainer>
 
               {/* Central Crosshair / Marker (Fixed in center) */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1000]">
                  <motion.div 
                    className="relative flex flex-col items-center"
+                   initial={{ y: -20, opacity: 0 }}
+                   animate={{ y: 0, opacity: 1 }}
                  >
-                    <div className="bg-brand text-black px-3 py-1 rounded-full text-[10px] font-bold mb-2 shadow-lg shadow-brand/20 whitespace-nowrap">
+                    <motion.div 
+                      key={virtualLocation.name}
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="bg-brand text-black px-3 py-1 rounded-full text-[10px] font-bold mb-2 shadow-xl shadow-brand/40 whitespace-nowrap border-2 border-white/20"
+                    >
                       {virtualLocation.name}
-                    </div>
-                    <MapPin size={48} className="text-brand filter drop-shadow-[0_0_12px_rgba(0,255,65,0.6)]" />
-                    <div className="w-12 h-3 bg-black/20 blur-sm rounded-full mt-1"></div>
+                    </motion.div>
+                    <MapPin size={52} className="text-brand filter drop-shadow-[0_0_15px_rgba(0,255,65,0.8)]" />
+                    <div className="w-14 h-4 bg-black/30 blur-md rounded-full mt-1"></div>
                  </motion.div>
               </div>
             </div>
@@ -1322,21 +1414,28 @@ export default function App() {
                        type="text"
                        placeholder="Search city or location..."
                        className={`w-full bg-transparent p-4 text-sm focus:outline-none ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
-                       onKeyDown={(e) => {
+                       onKeyDown={async (e) => {
                          if (e.key === 'Enter') {
-                            const val = (e.target as HTMLInputElement).value.toLowerCase();
-                            const cities = [
-                              { name: 'Paris, France', lat: 48.8566, lng: 2.3522 },
-                              { name: 'Berlin, Germany', lat: 52.5200, lng: 13.4050 },
-                              { name: 'Dubai, UAE', lat: 25.2048, lng: 55.2708 },
-                              { name: 'Tokyo, Japan', lat: 35.6762, lng: 139.6503 },
-                              { name: 'Tashkent, Uzbekistan', lat: 41.2995, lng: 69.2401 },
-                              { name: 'London, UK', lat: 51.5074, lng: -0.1278 },
-                              { name: 'New York, USA', lat: 40.7128, lng: -74.0060 }
-                            ];
-                            const found = cities.find(c => c.name.toLowerCase().includes(val));
-                            if (found) setVirtualLocation(found);
-                            else alert("City not indexed in virtual atlas. Try: Tokyo, Tashkent, London...");
+                            const val = (e.target as HTMLInputElement).value;
+                            if (!val) return;
+                            
+                            try {
+                              const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}`);
+                              const data = await response.json();
+                              if (data && data.length > 0) {
+                                 const result = data[0];
+                                 setVirtualLocation({
+                                   lat: parseFloat(result.lat),
+                                   lng: parseFloat(result.lon),
+                                   name: result.display_name.split(',')[0]
+                                 });
+                              } else {
+                                 alert("Location not found on OpenStreetMap.");
+                               }
+                            } catch (err) {
+                              console.error("Search failed:", err);
+                              alert("Failed to connect to OpenStreetMap search.");
+                            }
                          }
                        }}
                     />
@@ -1365,18 +1464,72 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setShowMapView(false);
-                      const notification = document.createElement('div');
-                      notification.className = "fixed top-20 left-1/2 -translate-x-1/2 bg-brand text-black px-6 py-3 rounded-2xl font-bold z-[200] shadow-2xl animate-bounce";
-                      notification.innerText = t.spoof_active;
-                      document.body.appendChild(notification);
-                      setTimeout(() => notification.remove(), 3000);
+                      setToast({
+                        show: true,
+                        message: `GPS Spoofing Active: ${virtualLocation.name}`,
+                        type: 'success'
+                      });
+                      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
                     }}
-                    className="w-full py-3.5 bg-brand text-black font-bold rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 text-xs"
+                    className="w-full bg-brand hover:brightness-110 text-black py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-brand/20 transition-all active:scale-95"
                   >
-                    <CheckCircle2 size={16} />
-                    {t.apply_fix}
+                    <CheckCircle2 size={18} />
+                    APPLY GPS LOCATION
                   </button>
                </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast.show && (
+          <motion.div 
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] px-6 py-3 rounded-2xl shadow-2xl backdrop-blur-xl border border-white/10 flex items-center gap-3 bg-brand/90 text-black font-bold"
+          >
+            <CheckCircle2 size={20} />
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Initialization / Cloning / Installation Modal */}
+      <AnimatePresence>
+        {isCloning && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-6"
+          >
+            <div className="w-full max-w-[280px] space-y-6 text-center">
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="w-16 h-16 border-4 border-brand/20 border-t-brand rounded-full mx-auto"
+              />
+              <div className="space-y-1">
+                <h3 className="text-brand font-bold tracking-widest uppercase">
+                  {selectedApp?.isClone ? 'Cloning Engine' : 'Extracting APK'}
+                </h3>
+                <p className="text-[10px] text-white/50">{selectedApp?.name} • Stage {Math.round(cloningProgress/25) + 1}</p>
+              </div>
+              
+              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-brand"
+                  style={{ width: `${cloningProgress}%` }}
+                />
+              </div>
+              
+              <div className="flex justify-between text-[9px] font-mono text-brand/60 uppercase">
+                <span>Relocating OBB</span>
+                <span>{Math.round(cloningProgress)}%</span>
+              </div>
             </div>
           </motion.div>
         )}
