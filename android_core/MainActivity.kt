@@ -3,6 +3,7 @@ package com.virtualo.app
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -15,6 +16,7 @@ import com.virtualo.core.VirtualCore
 import com.virtualo.core.pm.PackageParser
 import com.virtualo.core.runtime.StubActivity
 import com.virtualo.core.ui.AppListAdapter
+import com.virtualo.core.ui.HomeAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,6 +54,12 @@ class MainActivity : AppCompatActivity() {
         homeRecycler.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         homeAdapter = HomeAdapter(emptyList()) { clone -> launchApp(clone.packageName) }
         homeRecycler.adapter = homeAdapter
+
+        // 3. Setup Refresh Button
+        findViewById<ImageButton>(R.id.btn_refresh).setOnClickListener {
+            loadInstalledApps()
+            Toast.makeText(this, "Ilovalar ro'yxati yangilanmoqda...", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun refreshHome() {
@@ -61,9 +69,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadInstalledApps() {
         lifecycleScope.launch {
+            val progressLabel = findViewById<TextView>(R.id.list_label)
+            progressLabel.text = "Ilovalar qidirilmoqda..."
+            
             val scanner = AppScanManager(this@MainActivity)
             val apps = withContext(Dispatchers.IO) { scanner.getInstalledApps() }
+            
             appAdapter.updateList(apps)
+            progressLabel.text = "O'rnatilgan ilovalar (${apps.size})"
+            
+            if (apps.isEmpty()) {
+                Toast.makeText(this@MainActivity, "Hech qanday ilova topilmadi. Ruxsatlarni tekshiring.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

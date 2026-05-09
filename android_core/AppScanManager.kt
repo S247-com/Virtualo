@@ -23,11 +23,21 @@ class AppScanManager(private val context: Context) {
 
     fun getInstalledApps(includeSystem: Boolean = false): List<AppInfo> {
         val pm = context.packageManager
+        // GET_INSTALLED_APPLICATIONS o'rniga GET_META_DATA bilan barcha paketlarni olamiz
         val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
         
-        return apps.filter { 
+        Log.d("AppScan", "Jami topilgan ilovalar: ${apps.size}")
+
+        return apps.filter { appInfo ->
+            val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            val isUpdatedSystem = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+            
+            // Agar foydalanuvchi tizim ilovalarini xohlamasa, faqat user ilovalarni qoldiramiz
             if (includeSystem) true 
-            else (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 
+            else (!isSystem || isUpdatedSystem)
+        }.filter { 
+            // O'zimizni (host appni) ro'yxatdan olib tashlaymiz
+            it.packageName != context.packageName 
         }.mapNotNull { appInfo ->
             try {
                 val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
@@ -40,11 +50,11 @@ class AppScanManager(private val context: Context) {
                     icon = appInfo.loadIcon(pm),
                     apkPath = appInfo.sourceDir,
                     version = packageInfo.versionName ?: "1.0",
-                    size = "${sizeInMb}MB"
+                    size = if (sizeInMb > 0) "${sizeInMb}MB" else "<1MB"
                 )
             } catch (e: Exception) {
                 null
             }
-        }
+        }.sortedBy { it.name.lowercase() } // Alifbo bo'yicha saralash
     }
 }
