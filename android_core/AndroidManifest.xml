@@ -1,11 +1,16 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" 
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.virtualo.app">
+    package="com.roklinn.virtualo">
 
-    <!-- Android 11+ da barcha ilovalarni ko'rish uchun ruxsat -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" 
         tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    
+    <!-- VirtualO needs these for cloning -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
     <queries>
         <intent>
@@ -13,23 +18,21 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
-    
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
-    <application
-        android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:label="VirtualO"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
+    <application 
+        android:allowBackup="true" 
+        android:icon="@mipmap/ic_launcher" 
+        android:label="VirtualO" 
+        android:roundIcon="@mipmap/ic_launcher_round" 
+        android:supportsRtl="true" 
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
+        <activity 
+            android:configChanges="density|keyboard|keyboardHidden|locale|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode" 
+            android:exported="true" 
+            android:label="VirtualO" 
+            android:launchMode="singleTask" 
+            android:name=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -38,20 +41,35 @@
 
         <!-- Stub Components for Virtualization -->
         <activity 
-            android:name="com.virtualo.core.runtime.StubActivity"
+            android:name="com.roklinn.virtualo.core.runtime.StubActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|navigation|mcc|mnc|locale|touchscreen|keyboard|fontScale|uiMode|layoutDirection|smallestScreenSize"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
 
         <service 
-            android:name="com.virtualo.core.runtime.StubService"
+            android:name="com.roklinn.virtualo.core.runtime.StubService"
             android:exported="false" />
 
         <provider
-            android:name="com.virtualo.core.runtime.StubContentProvider"
-            android:authorities="com.virtualo.core.stub_provider"
+            android:name="com.roklinn.virtualo.core.runtime.StubContentProvider"
+            android:authorities="com.roklinn.virtualo.core.stub_provider"
             android:exported="false" />
 
-    </application>
+        <provider 
+            android:authorities="com.roklinn.virtualo.fileprovider" 
+            android:exported="false" 
+            android:grantUriPermissions="true" 
+            android:name="androidx.core.content.FileProvider">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
 
+        <provider 
+            android:authorities="com.roklinn.virtualo.androidx-startup" 
+            android:exported="false" 
+            android:name="androidx.startup.InitializationProvider">
+            <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer" android:value="androidx.startup" />
+            <meta-data android:name="androidx.lifecycle.ProcessLifecycleInitializer" android:value="androidx.startup" />
+            <meta-data android:name="androidx.profileinstaller.ProfileInstallerInitializer" android:value="androidx.startup" />
+        </provider>
+    </application>
 </manifest>

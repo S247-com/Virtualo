@@ -1,4 +1,4 @@
-package com.virtualo.core.runtime
+package com.roklinn.virtualo.core.runtime
 
 import android.content.*
 import android.database.Cursor
@@ -17,7 +17,7 @@ class StubContentProvider : ContentProvider() {
      * Manifest entries should point to this.
      */
     companion object {
-        const val STUB_AUTHORITY = "com.virtualo.core.stub_provider"
+        const val STUB_AUTHORITY = "com.roklinn.virtualo.core.stub_provider"
     }
 
     override fun onCreate(): Boolean {
@@ -26,7 +26,7 @@ class StubContentProvider : ContentProvider() {
     }
 
     private fun resolveGuestUr(uri: Uri): Pair<String, Uri>? {
-        // Expected format: content://com.virtualo.core.stub_provider/com.guest.pkg/path
+        // Expected format: content://com.roklinn.virtualo.core.stub_provider/com.guest.pkg/path
         val segments = uri.pathSegments
         if (segments.isEmpty()) return null
         

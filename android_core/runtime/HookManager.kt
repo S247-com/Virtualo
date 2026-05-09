@@ -1,4 +1,4 @@
-package com.virtualo.core.runtime
+package com.roklinn.virtualo.core.runtime
 
 import android.app.Instrumentation
 import android.util.Log

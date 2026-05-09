@@ -1,8 +1,8 @@
-package com.virtualo.core
+package com.roklinn.virtualo.core
 
 import android.content.Context
 import android.util.Log
-import com.virtualo.core.pm.PackageParser
+import com.roklinn.virtualo.core.pm.PackageParser
 import java.io.File
 
 /**
@@ -25,7 +25,7 @@ object VirtualCore {
         }
 
         // Inject low-level hooks
-        com.virtualo.core.runtime.HookManager.injectInstrumentation()
+        com.roklinn.virtualo.core.runtime.HookManager.injectInstrumentation()
         
         Log.d(TAG, "VirtualO Initialized: ${virtualRoot.absolutePath}")
     }
@@ -45,7 +45,7 @@ object VirtualCore {
     fun loadPackage(pkgName: String, apkPath: String, launcher: String) {
         if (!VirtualRuntime.isLoaded(pkgName)) {
             val resources = VirtualContext.createGuestResources(context, apkPath)
-            val vPkg = com.virtualo.core.models.VirtualPackage(
+            val vPkg = com.roklinn.virtualo.core.models.VirtualPackage(
                 pkgName, apkPath, launcher, null, resources
             )
             VirtualRuntime.registerPackage(vPkg)

@@ -1,4 +1,4 @@
-package com.virtualo.core.runtime
+package com.roklinn.virtualo.core.runtime
 
 import android.app.Activity
 import android.app.Instrumentation
@@ -7,8 +7,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
-import com.virtualo.core.container.VirtualContext
-import com.virtualo.core.models.VirtualPackage
+import com.roklinn.virtualo.core.container.VirtualContext
+import com.roklinn.virtualo.core.models.VirtualPackage
 
 /**
  * VirtualInstrumentation
@@ -34,7 +34,7 @@ class VirtualInstrumentation(private val base: Instrumentation) : Instrumentatio
         if (vPkg != null && targetClass != null) {
             // Re-route to our StubActivity and store original intent
             intent?.apply {
-                component = android.content.ComponentName(who?.packageName ?: "", "com.virtualo.core.runtime.StubActivity")
+                component = android.content.ComponentName(who?.packageName ?: "", "com.roklinn.virtualo.core.runtime.StubActivity")
                 putExtra("TARGET_ACTIVITY", targetClass)
                 putExtra("PKG_NAME", pkgName)
                 putExtra("APK_PATH", vPkg.apkPath)

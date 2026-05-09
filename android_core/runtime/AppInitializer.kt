@@ -1,11 +1,11 @@
-package com.virtualo.core.runtime
+package com.roklinn.virtualo.core.runtime
 
 import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import android.util.Log
-import com.virtualo.core.container.VirtualContext
-import com.virtualo.core.models.VirtualPackage
+import com.roklinn.virtualo.core.container.VirtualContext
+import com.roklinn.virtualo.core.models.VirtualPackage
 
 /**
  * AppInitializer

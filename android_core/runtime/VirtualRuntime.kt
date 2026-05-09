@@ -1,8 +1,11 @@
-package com.virtualo.core.runtime
+package com.roklinn.virtualo.core.runtime
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
-import com.virtualo.core.models.VirtualPackage
+import com.roklinn.virtualo.core.models.VirtualPackage
+import dalvik.system.DexClassLoader
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -20,13 +23,13 @@ object VirtualRuntime {
         loadedPackages[packageName]?.let { return it }
 
         // 2. Attempt restoration from Registry
-        val registry = CloneRegistry(context)
+        val registry = com.roklinn.virtualo.core.CloneRegistry(context)
         val meta = registry.getRegisteredApps().find { it.packageName == packageName } ?: return null
 
         Log.i(TAG, "Restoring dead package: $packageName")
         
         // Build the virtual package
-        val resources = VirtualContext.createGuestResources(context, meta.apkPath)
+        val resources = com.roklinn.virtualo.core.container.VirtualContext.createGuestResources(context, meta.apkPath)
         val dexDir = File(context.cacheDir, "dex_opt_${packageName}")
         if (!dexDir.exists()) dexDir.mkdirs()
 

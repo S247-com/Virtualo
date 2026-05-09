@@ -1,4 +1,4 @@
-package com.virtualo.core.runtime
+package com.roklinn.virtualo.core.runtime
 
 import android.app.Activity
 import android.content.Context
@@ -8,8 +8,8 @@ import android.content.res.Resources
 import android.content.res.AssetManager
 import android.os.Bundle
 import android.util.Log
-import com.virtualo.core.container.VirtualContext
-import com.virtualo.core.models.VirtualPackage
+import com.roklinn.virtualo.core.container.VirtualContext
+import com.roklinn.virtualo.core.models.VirtualPackage
 import dalvik.system.DexClassLoader
 import java.io.File
 

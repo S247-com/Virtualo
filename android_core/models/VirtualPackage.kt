@@ -1,4 +1,4 @@
-package com.virtualo.core.models
+package com.roklinn.virtualo.core.models
 
 import android.content.res.Resources
 import dalvik.system.DexClassLoader

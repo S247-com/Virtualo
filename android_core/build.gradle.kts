@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.virtualo.app"
+    namespace = "com.roklinn.virtualo"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.virtualo.app"
+        applicationId = "com.roklinn.virtualo"
         minSdk = 29 // Android 10
         targetSdk = 34 // Android 14
         versionCode = 1

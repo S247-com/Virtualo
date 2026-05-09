@@ -1,4 +1,4 @@
-package com.virtualo.core
+package com.roklinn.virtualo.core
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
@@ -22,9 +22,9 @@ class AppScanManager(private val context: Context) {
         val size: String
     )
 
-    fun getInstalledApps(includeSystem: Boolean = false): List<AppInfo> {
+    fun getInstalledApps(): List<AppInfo> {
         val pm = context.packageManager
-        // GET_INSTALLED_APPLICATIONS o'rniga GET_META_DATA bilan barcha paketlarni olamiz
+        // Barcha o'rnatilgan ilovalarni olamiz
         val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
         
         Log.d("AppScan", "Jami topilgan ilovalar: ${apps.size}")
@@ -33,12 +33,8 @@ class AppScanManager(private val context: Context) {
             val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
             val isUpdatedSystem = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
             
-            // Agar foydalanuvchi tizim ilovalarini xohlamasa, faqat user ilovalarni qoldiramiz
-            if (includeSystem) true 
-            else (!isSystem || isUpdatedSystem)
-        }.filter { 
-            // O'zimizni (host appni) ro'yxatdan olib tashlaymiz
-            it.packageName != context.packageName 
+            // Faqat user ilovalarni yoki yangilangan tizim ilovalarini qoldiramiz
+            (!isSystem || isUpdatedSystem) && appInfo.packageName != context.packageName
         }.mapNotNull { appInfo ->
             try {
                 val packageInfo = pm.getPackageInfo(appInfo.packageName, 0)
@@ -56,6 +52,6 @@ class AppScanManager(private val context: Context) {
             } catch (e: Exception) {
                 null
             }
-        }.sortedBy { it.name.lowercase() } // Alifbo bo'yicha saralash
+        }.sortedBy { it.name.lowercase() }
     }
 }

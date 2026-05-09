@@ -1,4 +1,4 @@
-package com.virtualo.core
+package com.roklinn.virtualo.core
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers

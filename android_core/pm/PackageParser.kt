@@ -1,4 +1,4 @@
-package com.virtualo.core.pm
+package com.roklinn.virtualo.core.pm
 
 import android.content.Context
 import android.content.pm.PackageInfo

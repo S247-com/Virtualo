@@ -1,4 +1,4 @@
-package com.virtualo.app
+package com.roklinn.virtualo
 
 import android.content.Intent
 import android.os.Bundle
@@ -11,12 +11,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.virtualo.core.AppScanManager
-import com.virtualo.core.VirtualCore
-import com.virtualo.core.pm.PackageParser
-import com.virtualo.core.runtime.StubActivity
-import com.virtualo.core.ui.AppListAdapter
-import com.virtualo.core.ui.HomeAdapter
+import com.roklinn.virtualo.core.AppScanManager
+import com.roklinn.virtualo.core.VirtualCore
+import com.roklinn.virtualo.core.pm.PackageParser
+import com.roklinn.virtualo.core.runtime.StubActivity
+import com.roklinn.virtualo.core.ui.AppListAdapter
+import com.roklinn.virtualo.core.ui.HomeAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

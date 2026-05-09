@@ -1,9 +1,11 @@
-package com.virtualo.core.container
+package com.roklinn.virtualo.core.container
 
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.AssetManager
 import android.content.res.Resources
+import com.roklinn.virtualo.core.runtime.StubContentProvider
+import com.roklinn.virtualo.core.runtime.VirtualRuntime
 import java.io.File
 
 /**
