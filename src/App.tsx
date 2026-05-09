@@ -610,28 +610,45 @@ export default function App() {
 
   const scanApps = () => {
     setIsScanning(true);
-    // Simulate real phone scanning
+    // Clearing any previous simulation
+    setLocalInstalledApps([]);
+    
     setTimeout(() => {
-      const generatedApps: AppInstance[] = [
-        { id: 'app-1', name: 'Browser', packageName: 'com.android.chrome', icon: '🌐', version: '124.0', size: '156MB', isClone: false, status: 'active' },
-        { id: 'app-2', name: 'Camera', packageName: 'com.android.camera', icon: '📷', version: '2.0', size: '22MB', isClone: false, status: 'active' },
-        { id: 'app-3', name: 'Settings', packageName: 'com.android.settings', icon: '⚙️', version: '1.0', size: '15MB', isClone: false, status: 'active' },
-        { id: 'app-4', name: 'Files', packageName: 'com.android.documentsui', icon: '📂', version: '34', size: '45MB', isClone: false, status: 'active' },
-        { id: 'app-5', name: 'Gallery', packageName: 'com.android.gallery3d', icon: '🖼️', version: '1.1', size: '38MB', isClone: false, status: 'active' },
-        { id: 'app-6', name: 'Contacts', packageName: 'com.android.contacts', icon: '👤', version: '2.5', size: '12MB', isClone: false, status: 'active' },
-      ];
-      setLocalInstalledApps(generatedApps);
       setIsScanning(false);
-      setToast({ show: true, message: `Found ${generatedApps.length} system applications`, type: 'success' });
-      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
-    }, 2000);
+      setToast({ 
+        show: true, 
+        message: "Web Preview: Please manually enter a package name to simulate cloning for testing purposes.", 
+        type: 'info' 
+      });
+      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 5000);
+    }, 1000);
+  };
+
+  const addTestApp = (name: string) => {
+    const newApp: AppInstance = {
+      id: `test-${Date.now()}`,
+      name: name,
+      packageName: `com.test.${name.toLowerCase().replace(/\s/g, '')}`,
+      icon: '📦',
+      version: '1.0.0',
+      size: '15MB',
+      isClone: false,
+      status: 'active'
+    };
+    setLocalInstalledApps(prev => [...prev, newApp]);
   };
 
   useEffect(() => {
-    if (activeTab === 'add' && addSubTab === 'installed' && localInstalledApps.length === 0) {
-      scanApps();
+    // Initial notice
+    if (activeTab === 'add' && addSubTab === 'installed') {
+       setToast({ 
+         show: true, 
+         message: "Note: Real hardware scan logic is in /android_core/ folder for Android Studio use.", 
+         type: 'info' 
+       });
+       setTimeout(() => setToast(prev => ({ ...prev, show: false })), 5000);
     }
-  }, [activeTab, addSubTab]);
+  }, [activeTab]);
 
   if (isInitializing) {
     return (
