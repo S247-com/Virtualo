@@ -121,14 +121,7 @@ interface UserProfile {
 }
 
 // --- Mock Data ---
-const MOCK_APPS: AppInstance[] = [
-  { id: 'app-wa', name: 'WhatsApp', packageName: 'com.whatsapp', icon: '🟢', version: '2.24.5.76', size: '45MB', isClone: false, status: 'active' },
-  { id: 'app-tg', name: 'Telegram', packageName: 'org.telegram.messenger', icon: '🔵', version: '10.8.1', size: '72MB', isClone: false, status: 'active' },
-  { id: 'app-ig', name: 'Instagram', packageName: 'com.instagram.android', icon: '📸', version: '321.0.0', size: '58MB', isClone: false, status: 'active' },
-  { id: 'app-fb', name: 'Facebook', packageName: 'com.facebook.katana', icon: '📘', version: '452.0.0', size: '65MB', isClone: false, status: 'active' },
-  { id: 'app-yt', name: 'YouTube', packageName: 'com.google.android.youtube', icon: '📺', version: '19.08.37', size: '120MB', isClone: false, status: 'active' },
-  { id: 'app-tt', name: 'TikTok', packageName: 'com.zhiliaoapp.musically', icon: '🎵', version: '33.5.4', size: '95MB', isClone: false, status: 'active' },
-];
+const MOCK_APPS: AppInstance[] = [];
 
 const MOCK_CLONES: AppInstance[] = [];
 
@@ -330,6 +323,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'add' | 'settings' | 'premium' | 'admin'>('home');
   const [addSubTab, setAddSubTab] = useState<'installed' | 'folders'>('installed');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [localInstalledApps, setLocalInstalledApps] = useState<AppInstance[]>([]);
   const [isCloning, setIsCloning] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
   const [selectedApp, setSelectedApp] = useState<AppInstance | null>(null);
@@ -476,9 +471,9 @@ export default function App() {
   });
 
   const [mockFiles] = useState([
-    { name: 'WhatsApp_v2.24.apk', size: '45.2 MB', type: 'apk', icon: '🟢' },
-    { name: 'Telegram_v10.1.apk', size: '72.1 MB', type: 'apk', icon: '🔵' },
-    { name: 'PUBG_Mobile_v3.0.apk', size: '1.2 GB', type: 'apk', icon: '🔫' },
+    { name: 'System_Tools_v1.0.apk', size: '12.2 MB', type: 'apk', icon: '🛠️' },
+    { name: 'Sample_App_v2.1.apk', size: '5.1 MB', type: 'apk', icon: '📦' },
+    { name: 'Utility_v3.0.apk', size: '8.5 MB', type: 'apk', icon: '🔧' },
     { name: 'config_root.xml', size: '12 KB', type: 'file' },
     { name: 'obb_data_main.zip', size: '450 MB', type: 'file' }
   ]);
@@ -557,38 +552,6 @@ export default function App() {
     localStorage.setItem('virtualo_support', supportLink);
   }, [supportLink]);
 
-  if (isInitializing) {
-    return (
-      <div className="h-screen bg-surface-900 flex flex-col items-center justify-center space-y-6">
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="w-16 h-16 bg-brand/10 border border-brand/40 flex items-center justify-center rounded-2xl shadow-[0_0_30px_rgba(0,255,65,0.2)]"
-        >
-          <Zap size={32} className="text-brand" />
-        </motion.div>
-        
-        <div className="text-center font-mono space-y-2">
-          <motion.p 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-brand text-xs tracking-widest uppercase font-bold"
-          >
-            VIRTUALO LOADING...
-          </motion.p>
-          <div className="w-48 h-0.5 bg-surface-800 rounded-full overflow-hidden">
-            <motion.div 
-              className="h-full bg-brand"
-              initial={{ width: 0 }}
-              animate={{ width: "100%" }}
-              transition={{ duration: 1.8, ease: "easeInOut" }}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const handleLaunch = (app: AppInstance) => {
     setSelectedApp(app);
     setIsLaunching(true);
@@ -644,6 +607,63 @@ export default function App() {
       }
     }, interval);
   };
+
+  const scanApps = () => {
+    setIsScanning(true);
+    // Simulate real phone scanning
+    setTimeout(() => {
+      const generatedApps: AppInstance[] = [
+        { id: 'app-1', name: 'Browser', packageName: 'com.android.chrome', icon: '🌐', version: '124.0', size: '156MB', isClone: false, status: 'active' },
+        { id: 'app-2', name: 'Camera', packageName: 'com.android.camera', icon: '📷', version: '2.0', size: '22MB', isClone: false, status: 'active' },
+        { id: 'app-3', name: 'Settings', packageName: 'com.android.settings', icon: '⚙️', version: '1.0', size: '15MB', isClone: false, status: 'active' },
+        { id: 'app-4', name: 'Files', packageName: 'com.android.documentsui', icon: '📂', version: '34', size: '45MB', isClone: false, status: 'active' },
+        { id: 'app-5', name: 'Gallery', packageName: 'com.android.gallery3d', icon: '🖼️', version: '1.1', size: '38MB', isClone: false, status: 'active' },
+        { id: 'app-6', name: 'Contacts', packageName: 'com.android.contacts', icon: '👤', version: '2.5', size: '12MB', isClone: false, status: 'active' },
+      ];
+      setLocalInstalledApps(generatedApps);
+      setIsScanning(false);
+      setToast({ show: true, message: `Found ${generatedApps.length} system applications`, type: 'success' });
+      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+    }, 2000);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'add' && addSubTab === 'installed' && localInstalledApps.length === 0) {
+      scanApps();
+    }
+  }, [activeTab, addSubTab]);
+
+  if (isInitializing) {
+    return (
+      <div className="h-screen bg-surface-900 flex flex-col items-center justify-center space-y-6">
+        <motion.div 
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="w-16 h-16 bg-brand/10 border border-brand/40 flex items-center justify-center rounded-2xl shadow-[0_0_30px_rgba(0,255,65,0.2)]"
+        >
+          <Zap size={32} className="text-brand" />
+        </motion.div>
+        
+        <div className="text-center font-mono space-y-2">
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-brand text-xs tracking-widest uppercase font-bold"
+          >
+            VIRTUALO LOADING...
+          </motion.p>
+          <div className="w-48 h-0.5 bg-surface-800 rounded-full overflow-hidden">
+            <motion.div 
+              className="h-full bg-brand"
+              initial={{ width: 0 }}
+              animate={{ width: "100%" }}
+              transition={{ duration: 1.8, ease: "easeInOut" }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col h-screen overflow-hidden font-sans ${isDarkMode ? 'bg-surface-900 text-gray-300' : 'bg-gray-50 text-gray-800'}`}>
@@ -796,37 +816,58 @@ export default function App() {
               <div className="space-y-4">
                 {addSubTab === 'installed' ? (
                   <div className="space-y-3">
-                    <div className="relative mb-4">
-                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30" size={16} />
-                       <input 
-                         type="text" 
-                         placeholder="Search installed apps..." 
-                         className={`w-full pl-11 pr-4 py-3.5 rounded-2xl border focus:outline-none transition-all ${isDarkMode ? 'bg-surface-800 border-border focus:border-brand/40' : 'bg-white border-gray-100 shadow-sm focus:bg-white'}`}
-                         value={searchQuery}
-                         onChange={(e) => setSearchQuery(e.target.value)}
-                       />
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30" size={16} />
+                        <input 
+                          type="text" 
+                          placeholder="Search installed apps..." 
+                          className={`w-full pl-11 pr-4 py-3.5 rounded-2xl border focus:outline-none transition-all ${isDarkMode ? 'bg-surface-800 border-border focus:border-brand/40' : 'bg-white border-gray-100 shadow-sm focus:bg-white'}`}
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                      </div>
+                      <button 
+                        onClick={scanApps}
+                        disabled={isScanning}
+                        className={`p-3.5 rounded-2xl border transition-all ${isScanning ? 'opacity-50' : 'hover:border-brand active:scale-95'} ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}
+                      >
+                        <ShieldCheck className={isScanning ? 'animate-spin' : ''} size={20} />
+                      </button>
                     </div>
+
                     <div className="grid grid-cols-1 gap-3">
-                      {MOCK_APPS.filter(app => app.name.toLowerCase().includes(searchQuery.toLowerCase())).map((app) => (
-                        <div 
-                          key={app.id} 
-                          onClick={() => handleClone(app)}
-                          className={`flex items-center justify-between p-4 rounded-3xl border cursor-pointer hover:border-brand transition-all active:scale-[0.98] ${isDarkMode ? 'bg-surface-800 border-border hover:bg-surface-700' : 'bg-white border-gray-200 shadow-sm'}`}
-                        >
-                          <div className="flex items-center gap-4">
-                             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${isDarkMode ? 'bg-surface-900/50' : 'bg-gray-100'}`}>
-                                {app.icon}
-                             </div>
-                             <div>
-                                <p className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900 text-md'}`}>{app.name}</p>
-                                <p className="text-[10px] font-mono opacity-50 uppercase tracking-tighter">{app.version} • {app.size}</p>
-                             </div>
-                          </div>
-                          <div className="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center text-brand">
-                             <PlusCircle size={20} />
-                          </div>
+                      {isScanning ? (
+                        <div className="py-12 flex flex-col items-center justify-center space-y-4 opacity-40">
+                          <Smartphone size={48} className="animate-pulse" />
+                          <p className="text-xs font-mono animate-pulse uppercase tracking-widest">Scanning local storage...</p>
                         </div>
-                      ))}
+                      ) : localInstalledApps.length === 0 ? (
+                        <div className="py-12 text-center opacity-30">
+                          <p className="text-xs">No apps found. Click refresh to scan.</p>
+                        </div>
+                      ) : (
+                        localInstalledApps.filter(app => app.name.toLowerCase().includes(searchQuery.toLowerCase())).map((app) => (
+                          <div 
+                            key={app.id} 
+                            onClick={() => handleClone(app)}
+                            className={`flex items-center justify-between p-4 rounded-3xl border cursor-pointer hover:border-brand transition-all active:scale-[0.98] ${isDarkMode ? 'bg-surface-800 border-border hover:bg-surface-700' : 'bg-white border-gray-200 shadow-sm'}`}
+                          >
+                            <div className="flex items-center gap-4">
+                               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${isDarkMode ? 'bg-surface-900/50' : 'bg-gray-100'}`}>
+                                  {app.icon}
+                               </div>
+                               <div>
+                                  <p className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900 text-md'}`}>{app.name}</p>
+                                  <p className="text-[10px] font-mono opacity-50 uppercase tracking-tighter">{app.version} • {app.size}</p>
+                               </div>
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center text-brand">
+                               <PlusCircle size={20} />
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 ) : (
