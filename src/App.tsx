@@ -122,19 +122,15 @@ interface UserProfile {
 
 // --- Mock Data ---
 const MOCK_APPS: AppInstance[] = [
-  { id: 'we2012', name: 'Winning Eleven 2012', packageName: 'kr.konami.we2012', icon: '⚽', version: '1.0.1', size: '156MB', isClone: false, status: 'active', cloneCount: 0 },
-  { id: '1', name: 'WhatsApp', packageName: 'com.whatsapp', icon: '🟢', version: '2.23.1', size: '42MB', isClone: false, status: 'active', cloneCount: 2 },
-  { id: '2', name: 'Telegram', packageName: 'org.telegram.messenger', icon: '🔵', version: '9.5.3', size: '68MB', isClone: false, status: 'active', cloneCount: 1 },
-  { id: '3', name: 'Instagram', packageName: 'com.instagram.android', icon: '📸', version: '272.0', size: '54MB', isClone: false, status: 'active', cloneCount: 0 },
-  { id: '4', name: 'Facebook', packageName: 'com.facebook.katana', icon: '📘', version: '405.0', size: '89MB', isClone: false, status: 'active', cloneCount: 0 },
-  { id: '5', name: 'TikTok', packageName: 'com.zhiliaoapp.musically', icon: '🎵', version: '28.1.3', size: '112MB', isClone: false, status: 'active', cloneCount: 0 },
+  { id: 'app-wa', name: 'WhatsApp', packageName: 'com.whatsapp', icon: '🟢', version: '2.24.5.76', size: '45MB', isClone: false, status: 'active' },
+  { id: 'app-tg', name: 'Telegram', packageName: 'org.telegram.messenger', icon: '🔵', version: '10.8.1', size: '72MB', isClone: false, status: 'active' },
+  { id: 'app-ig', name: 'Instagram', packageName: 'com.instagram.android', icon: '📸', version: '321.0.0', size: '58MB', isClone: false, status: 'active' },
+  { id: 'app-fb', name: 'Facebook', packageName: 'com.facebook.katana', icon: '📘', version: '452.0.0', size: '65MB', isClone: false, status: 'active' },
+  { id: 'app-yt', name: 'YouTube', packageName: 'com.google.android.youtube', icon: '📺', version: '19.08.37', size: '120MB', isClone: false, status: 'active' },
+  { id: 'app-tt', name: 'TikTok', packageName: 'com.zhiliaoapp.musically', icon: '🎵', version: '33.5.4', size: '95MB', isClone: false, status: 'active' },
 ];
 
-const MOCK_CLONES: AppInstance[] = [
-  { id: 'c1', name: 'WhatsApp Work', packageName: 'com.whatsapp.clone.1', icon: '🟢', version: '2.23.1', size: '42MB', isClone: true, status: 'active', lastUsed: '2 mins ago' },
-  { id: 'c2', name: 'WhatsApp Private', packageName: 'com.whatsapp.clone.2', icon: '🟢', version: '2.23.1', size: '42MB', isClone: true, status: 'active', lastUsed: '1 hour ago' },
-  { id: 'c3', name: 'Telegram Stealth', packageName: 'org.telegram.clone.1', icon: '🔵', version: '9.5.3', size: '68MB', isClone: true, status: 'suspended', lastUsed: 'Yesterday' },
-];
+const MOCK_CLONES: AppInstance[] = [];
 
 // --- Translations ---
 const translations: any = {
@@ -335,6 +331,7 @@ export default function App() {
   const [addSubTab, setAddSubTab] = useState<'installed' | 'folders'>('installed');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCloning, setIsCloning] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
   const [selectedApp, setSelectedApp] = useState<AppInstance | null>(null);
   const [cloningProgress, setCloningProgress] = useState(0);
 
@@ -592,9 +589,19 @@ export default function App() {
     );
   }
 
+  const handleLaunch = (app: AppInstance) => {
+    setSelectedApp(app);
+    setIsLaunching(true);
+    setTimeout(() => {
+      setIsLaunching(false);
+      setToast({ show: true, message: `${app.name} Launched Successfully`, type: 'info' });
+      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+    }, 4000);
+  };
+
   const handleClone = (app: AppInstance) => {
     if (!currentUser) return;
-    setSelectedApp(app);
+    setSelectedApp({ ...app, isClone: true });
     setIsCloning(true);
     setCloningProgress(0);
     
@@ -618,7 +625,7 @@ export default function App() {
           version: app.version,
           size: app.size,
           isClone: true,
-          status: 'active',
+          status: 'active' as const,
           lastUsed: 'Just now',
           createdAt: serverTimestamp()
         };
@@ -630,6 +637,8 @@ export default function App() {
         setTimeout(() => {
           setIsCloning(false);
           setSelectedApp(null);
+          setToast({ show: true, message: `${app.name} Cloned Successfully`, type: 'success' });
+          setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
           setActiveTab('home');
         }, 500);
       }
@@ -695,37 +704,40 @@ export default function App() {
                 {clonedApps.map((clone) => (
                   <div 
                     key={clone.id} 
-                    className={`p-4 border rounded-2xl transition-all group relative ${isDarkMode ? 'bg-surface-800 border-border hover:border-brand/30' : 'bg-white border-gray-200 hover:border-brand'}`}
+                    onClick={() => handleLaunch(clone)}
+                    className={`p-4 border rounded-3xl transition-all group relative cursor-pointer active:scale-[0.98] ${isDarkMode ? 'bg-surface-800 border-border hover:border-brand/40' : 'bg-white border-gray-200 hover:border-brand shadow-sm hover:shadow-md'}`}
                   >
                     <button 
                        onClick={(e) => {
                          e.stopPropagation();
                          deleteClone(clone.id);
                        }}
-                       className="absolute top-2 right-2 p-2 text-red-500/40 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                       className="absolute top-3 right-3 p-2 text-red-500/20 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 z-10"
                     >
                       <Trash2 size={16} />
                     </button>
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl ${isDarkMode ? 'bg-surface-700 border border-white/5' : 'bg-gray-50 border border-gray-100'}`}>
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${isDarkMode ? 'bg-surface-700' : 'bg-gray-50 border border-gray-100'}`}>
                           {clone.icon}
                         </div>
                         <div>
-                          <h4 className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{clone.name}</h4>
-                          <p className="text-[10px] font-mono opacity-50">{clone.packageName}</p>
+                          <h4 className={`font-bold text-md ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{clone.name}</h4>
+                          <p className="text-[10px] font-mono opacity-40 truncate max-w-[120px]">{clone.packageName}</p>
                         </div>
                       </div>
-                      <div className={`text-[10px] font-bold px-2 py-0.5 rounded ${clone.status === 'active' ? 'bg-brand/20 text-brand' : 'bg-red-500/10 text-red-500'}`}>
+                      <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${clone.status === 'active' ? 'bg-brand/10 text-brand' : 'bg-red-500/10 text-red-500'}`}>
                         {clone.status.toUpperCase()}
                       </div>
                     </div>
-                    <div className="flex items-center justify-between text-[11px] opacity-60">
-                      <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-between pt-2 border-t border-dashed border-white/5">
+                      <div className="flex items-center gap-1.5 opacity-40 text-[10px]">
                         <Clock size={12} />
-                        <span>{clone.lastUsed}</span>
+                        <span>{clone.lastUsed || 'Just now'}</span>
                       </div>
-                      <button className="text-brand font-bold hover:underline">LAUNCH ENGINE</button>
+                      <div className="flex items-center gap-1 text-brand text-[10px] font-bold tracking-widest group-hover:translate-x-1 transition-transform">
+                        LAUNCH <ArrowRight size={10} />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -783,66 +795,76 @@ export default function App() {
 
               <div className="space-y-4">
                 {addSubTab === 'installed' ? (
-                  <div className={`border rounded-2xl overflow-hidden divide-y ${isDarkMode ? 'bg-surface-800 border-border divide-border' : 'bg-white border-gray-200 divide-gray-100 shadow-sm'}`}>
-                    <div className="p-4 relative">
-                      <Search className="absolute left-7 top-1/2 -translate-y-1/2 opacity-30" size={16} />
-                      <input 
-                        type="text" 
-                        placeholder="Search system apps..." 
-                        className={`w-full text-sm pl-10 pr-4 py-2 rounded-lg focus:outline-none ${isDarkMode ? 'bg-surface-700' : 'bg-gray-50 border border-gray-100'}`}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                      />
+                  <div className="space-y-3">
+                    <div className="relative mb-4">
+                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30" size={16} />
+                       <input 
+                         type="text" 
+                         placeholder="Search installed apps..." 
+                         className={`w-full pl-11 pr-4 py-3.5 rounded-2xl border focus:outline-none transition-all ${isDarkMode ? 'bg-surface-800 border-border focus:border-brand/40' : 'bg-white border-gray-100 shadow-sm focus:bg-white'}`}
+                         value={searchQuery}
+                         onChange={(e) => setSearchQuery(e.target.value)}
+                       />
                     </div>
-                    {MOCK_APPS.filter(app => app.name.toLowerCase().includes(searchQuery.toLowerCase())).map((app) => (
-                      <div 
-                        key={app.id} 
-                        className={`flex items-center justify-between p-4 cursor-pointer active:scale-[0.98] transition-transform ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}
-                        onClick={() => handleClone(app)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${isDarkMode ? 'bg-surface-700' : 'bg-gray-50 border border-gray-100'}`}>
-                            {app.icon}
-                          </div>
-                          <div>
-                            <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{app.name}</p>
-                            <p className="text-[10px] font-mono opacity-50">{app.version} • {app.size}</p>
-                          </div>
-                        </div>
-                        <Copy size={20} className="text-brand opacity-60" />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className={`border-2 border-dashed rounded-3xl p-8 text-center space-y-4 ${isDarkMode ? 'bg-surface-800/50 border-border' : 'bg-gray-50 border-gray-300'}`}>
-                      <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center ${isDarkMode ? 'bg-surface-700' : 'bg-white'}`}>
-                        <FolderOpen className="text-brand" size={20} />
-                      </div>
-                      <div>
-                        <p className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Storage Explorer</p>
-                        <p className="text-[10px] opacity-50 mt-1">Tap APK files to install into Virtualo.</p>
-                      </div>
-                    </div>
-                    <div className={`border rounded-2xl overflow-hidden divide-y ${isDarkMode ? 'bg-surface-800 border-border divide-border' : 'bg-white border-gray-200 divide-gray-100'}`}>
-                       {mockFiles.map((file, i) => (
-                         <div 
-                           key={i} 
-                           onClick={() => file.type === 'apk' && handleInstallAPK(file)}
-                           className={`flex items-center justify-between p-4 ${file.type === 'apk' ? 'cursor-pointer hover:bg-brand/5' : 'opacity-50'}`}
-                         >
-                           <div className="flex items-center gap-3">
-                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDarkMode ? 'bg-surface-700' : 'bg-gray-100'}`}>
-                               {file.type === 'apk' ? <Zap size={14} className="text-brand" /> : <Database size={14} />}
+                    <div className="grid grid-cols-1 gap-3">
+                      {MOCK_APPS.filter(app => app.name.toLowerCase().includes(searchQuery.toLowerCase())).map((app) => (
+                        <div 
+                          key={app.id} 
+                          onClick={() => handleClone(app)}
+                          className={`flex items-center justify-between p-4 rounded-3xl border cursor-pointer hover:border-brand transition-all active:scale-[0.98] ${isDarkMode ? 'bg-surface-800 border-border hover:bg-surface-700' : 'bg-white border-gray-200 shadow-sm'}`}
+                        >
+                          <div className="flex items-center gap-4">
+                             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-inner ${isDarkMode ? 'bg-surface-900/50' : 'bg-gray-100'}`}>
+                                {app.icon}
                              </div>
                              <div>
-                               <p className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{file.name}</p>
-                               <p className="text-[9px] opacity-50">{file.size}</p>
+                                <p className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900 text-md'}`}>{app.name}</p>
+                                <p className="text-[10px] font-mono opacity-50 uppercase tracking-tighter">{app.version} • {app.size}</p>
                              </div>
-                           </div>
-                           {file.type === 'apk' && <PlusCircle size={16} className="text-brand" />}
-                         </div>
-                       ))}
+                          </div>
+                          <div className="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center text-brand">
+                             <PlusCircle size={20} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className={`p-8 rounded-[40px] border-2 border-dashed flex flex-col items-center justify-center text-center space-y-4 transition-all ${isDarkMode ? 'border-brand/20 bg-brand/5' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="w-16 h-16 rounded-[24px] bg-brand/10 flex items-center justify-center text-brand">
+                           <FolderOpen size={32} />
+                        </div>
+                        <div className="space-y-1">
+                           <h3 className="font-bold text-lg">External Engine</h3>
+                           <p className="text-[11px] opacity-40 max-w-[200px]">Sideload applications directly from the virtual file system.</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                       <p className="text-[10px] font-bold opacity-40 uppercase tracking-[0.2em] px-2">Storage Explorer</p>
+                       <div className={`rounded-[32px] border overflow-hidden ${isDarkMode ? 'bg-surface-800 border-border' : 'bg-white border-gray-100 shadow-sm'}`}>
+                          {mockFiles.map((file, idx) => (
+                             <div 
+                               key={idx}
+                               onClick={() => file.type === 'apk' && handleInstallAPK(file)}
+                               className={`p-4 flex items-center justify-between border-b last:border-0 transition-colors ${file.type === 'apk' ? 'cursor-pointer hover:bg-brand/5' : 'opacity-30'} ${isDarkMode ? 'border-white/5' : 'border-gray-50'}`}
+                             >
+                                <div className="flex items-center gap-4">
+                                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl ${isDarkMode ? 'bg-surface-900/50' : 'bg-gray-50'}`}>
+                                      {file.type === 'apk' ? '📦' : <Database className="opacity-20" size={20} />}
+                                   </div>
+                                   <div>
+                                      <p className="text-sm font-bold">{file.name}</p>
+                                      <p className="text-[10px] font-mono opacity-50 uppercase">{file.size}</p>
+                                   </div>
+                                </div>
+                                {file.type === 'apk' && (
+                                   <div className="px-3 py-1 bg-brand/10 text-brand text-[9px] font-bold rounded-full">INSTALL</div>
+                                )}
+                             </div>
+                          ))}
+                       </div>
                     </div>
                   </div>
                 )}
@@ -1497,40 +1519,60 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Initialization / Cloning / Installation Modal */}
+      {/* Initialization / Cloning / Installation / Launch Modal */}
       <AnimatePresence>
-        {isCloning && (
+        {(isCloning || isLaunching) && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-6"
+            className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6"
           >
-            <div className="w-full max-w-[280px] space-y-6 text-center">
+            <div className="w-full max-w-[280px] space-y-8 text-center">
               <motion.div 
-                animate={{ rotate: 360 }}
+                animate={{ 
+                  rotate: isLaunching ? [0, 90, 180, 270, 360] : 360,
+                  scale: isLaunching ? [1, 1.1, 1] : 1
+                }}
                 transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                className="w-16 h-16 border-4 border-brand/20 border-t-brand rounded-full mx-auto"
-              />
-              <div className="space-y-1">
-                <h3 className="text-brand font-bold tracking-widest uppercase">
-                  {selectedApp?.isClone ? 'Cloning Engine' : 'Extracting APK'}
+                className={`w-20 h-20 border-4 ${isLaunching ? 'border-brand/10 border-t-brand border-r-brand shadow-[0_0_40px_rgba(0,255,65,0.4)]' : 'border-brand/20 border-t-brand'} rounded-3xl mx-auto flex items-center justify-center`}
+              >
+                <div className="text-4xl">{selectedApp?.icon}</div>
+              </motion.div>
+
+              <div className="space-y-2">
+                <h3 className="text-brand font-bold tracking-[0.2em] uppercase text-sm">
+                  {isLaunching ? 'Virtual Boot' : (selectedApp?.isClone ? 'Cloning Engine' : 'Extracting APK')}
                 </h3>
-                <p className="text-[10px] text-white/50">{selectedApp?.name} • Stage {Math.round(cloningProgress/25) + 1}</p>
+                <p className="text-[10px] text-white/50 font-mono italic">
+                  {isLaunching ? `Sandboxing ${selectedApp?.name}...` : `${selectedApp?.name} • Stage ${Math.round(cloningProgress/25) + 1}`}
+                </p>
               </div>
               
-              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <motion.div 
-                  className="h-full bg-brand"
-                  style={{ width: `${cloningProgress}%` }}
-                />
-              </div>
+              {!isLaunching && (
+                <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                  <motion.div 
+                    className="h-full bg-brand"
+                    style={{ width: `${cloningProgress}%` }}
+                  />
+                </div>
+              )}
               
-              <div className="flex justify-between text-[9px] font-mono text-brand/60 uppercase">
-                <span>Relocating OBB</span>
-                <span>{Math.round(cloningProgress)}%</span>
+              <div className="flex justify-between text-[9px] font-mono text-brand/40 uppercase">
+                <span>{isLaunching ? 'Hypervisor Active' : 'Memory Relocation'}</span>
+                <span>{isLaunching ? 'Ready' : `${Math.round(cloningProgress)}%`}</span>
               </div>
             </div>
+            
+            {/* Ambient effects for launch */}
+            {isLaunching && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0, 0.5, 0] }}
+                transition={{ duration: 0.5, repeat: Infinity }}
+                className="absolute inset-0 bg-brand/5 pointer-events-none"
+              />
+            )}
           </motion.div>
         )}
       </AnimatePresence>
