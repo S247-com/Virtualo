@@ -85,6 +85,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initiateClone(app: AppScanManager.AppInfo) {
+        // User talabiga binoan: Ilova paket nomini Logga chiqarish
+        android.util.Log.d("VirtualO", "Ilova klon qilinmoqda: ${app.packageName}")
+        
         lifecycleScope.launch {
             progressBar.visibility = View.VISIBLE
             progressText.visibility = View.VISIBLE
